@@ -47,7 +47,7 @@ python main.py
 
 First run downloads daily adjusted closes via `yfinance` and caches them under `data/global_indices_adj_close.csv`.
 
-If Yahoo Finance rate-limits your IP, the loader automatically falls back to a **synthetic GARCH-like index panel** so the full research workflow still runs offline. Delete the cache and re-run later for live data:
+Data source order: **Yahoo Finance** → **akshare (Eastmoney)** → synthetic GARCH panel (offline demo). Delete the cache and re-run to refresh live data:
 
 ```bash
 del data\global_indices_adj_close.csv

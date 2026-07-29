@@ -1,28 +1,28 @@
 {
   "highest_sample_ann_vol": {
-    "index": "S&P 500",
-    "ann_vol": 16.99639940648752
+    "index": "Nikkei 225",
+    "ann_vol": 21.69381063856524
   },
   "most_persistent_volatility": {
     "index": "S&P 500",
-    "alpha_plus_beta": 0.9871791618157144
+    "alpha_plus_beta": 0.9595298681589326
   },
   "persistence_ranking": {
-    "S&P 500": 0.987179,
-    "FTSE 100": 0.972928,
-    "Nikkei 225": 0.963403,
-    "EURO STOXX 50": 0.950992
+    "S&P 500": 0.95953,
+    "EURO STOXX 50": 0.94643,
+    "Nikkei 225": 0.942546,
+    "FTSE 100": 0.920952
   },
   "ann_vol_ranking": {
-    "S&P 500": 16.9964,
-    "Nikkei 225": 16.6485,
-    "FTSE 100": 14.1048,
-    "EURO STOXX 50": 13.7847
+    "Nikkei 225": 21.6938,
+    "EURO STOXX 50": 19.2038,
+    "S&P 500": 18.0638,
+    "FTSE 100": 15.4395
   },
   "student_t_helps": {
-    "S&P 500": false,
-    "EURO STOXX 50": false,
-    "Nikkei 225": false,
+    "S&P 500": true,
+    "EURO STOXX 50": true,
+    "Nikkei 225": true,
     "FTSE 100": true
   },
   "ljung_box_std_resid_ok_5pct": {
@@ -32,8 +32,8 @@
     "FTSE 100": true
   },
   "data_range": {
-    "start": "2015-01-02",
-    "end": "2023-06-07",
-    "n_obs": 2199
+    "start": "2015-01-06",
+    "end": "2026-07-28",
+    "n_obs": 2427
   }
 }

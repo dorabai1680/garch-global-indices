@@ -14,6 +14,41 @@ try:
 except ImportError:  # pragma: no cover
     yf = None
 
+# Eastmoney symbols via akshare (works when Yahoo is blocked / rate-limited)
+AKSHARE_SYMBOLS: dict[str, str] = {
+    "S&P 500": "标普500",
+    "EURO STOXX 50": "欧洲斯托克50",
+    "Nikkei 225": "日经225",
+    "FTSE 100": "英国富时100",
+}
+
+
+def _download_akshare(tickers: dict[str, str], start: str) -> pd.DataFrame:
+    """Fetch daily closes via akshare ``index_global_hist_em``."""
+    try:
+        import akshare as ak
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError("akshare is required for the non-Yahoo fallback") from exc
+
+    frames: dict[str, pd.Series] = {}
+    for name in tickers:
+        em_sym = AKSHARE_SYMBOLS.get(name)
+        if em_sym is None:
+            continue
+        df = ak.index_global_hist_em(symbol=em_sym)
+        cols = df.columns.tolist()
+        date_col, close_col = cols[0], cols[4]  # 日期, 最新价/收盘
+        s = df[[date_col, close_col]].copy()
+        s[date_col] = pd.to_datetime(s[date_col])
+        s = s.set_index(date_col)[close_col].astype(float).sort_index()
+        s = s[~s.index.duplicated(keep="last")]
+        s.name = name
+        frames[name] = s
+    if not frames:
+        return pd.DataFrame()
+    prices = pd.DataFrame(frames).sort_index()
+    return prices.loc[start:]
+
 
 def _extract_close(raw: pd.DataFrame, symbols: list[str]) -> pd.DataFrame:
     if raw is None or raw.empty:
@@ -136,7 +171,6 @@ def download_prices(
     if series_list:
         closes = pd.concat(series_list, axis=1).sort_index()
         closes = closes.dropna(how="all")
-        # Keep columns that have enough history
         keep = [c for c in closes.columns if closes[c].notna().sum() > 200]
         closes = closes[keep]
         if len(keep) >= 2:
@@ -145,25 +179,41 @@ def download_prices(
                 closes.to_csv(cache_path)
             return closes
 
+    # Fallback 1: akshare / Eastmoney (often reachable when Yahoo is blocked)
+    try:
+        closes = _download_akshare(tickers, start=start)
+        keep = [c for c in closes.columns if closes[c].notna().sum() > 200]
+        closes = closes[keep]
+        if len(keep) >= 2:
+            warnings.warn(
+                "Yahoo Finance unavailable; loaded live prices via akshare (Eastmoney).",
+                UserWarning,
+                stacklevel=2,
+            )
+            if cache_path is not None:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                closes.to_csv(cache_path)
+            return closes
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(f"akshare fallback failed: {exc}", UserWarning, stacklevel=2)
+
     if not allow_synthetic:
         raise RuntimeError(
-            "Yahoo Finance returned no usable price data. "
+            "No usable price data from Yahoo or akshare. "
             "Check network access / rate limits, or delete a stale cache and retry."
         )
 
     warnings.warn(
-        "Yahoo Finance unavailable or rate-limited; using synthetic GARCH index panel. "
+        "Live data unavailable; using synthetic GARCH index panel. "
         "Delete the cache CSV and re-run later for live data.",
         UserWarning,
         stacklevel=2,
     )
     closes = make_synthetic_index_prices(list(tickers.keys()), start=start)
     if cache_path is not None:
-        # Cache under a distinct name so live data can replace it later
         synth_path = cache_path.with_name(cache_path.stem + "_synthetic.csv")
         synth_path.parent.mkdir(parents=True, exist_ok=True)
         closes.to_csv(synth_path)
-        # Also write main cache so subsequent runs are instant offline
         closes.to_csv(cache_path)
     return closes
 
