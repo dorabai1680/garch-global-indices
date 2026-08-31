@@ -1,24 +1,11 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-.eggs/
-dist/
-build/
 .venv/
-venv/
-env/
-
-# Jupyter
-.ipynb_checkpoints/
-
-# IDE / OS
-.idea/
-.vscode/
+__pycache__/
+*.pyc
 .DS_Store
-Thumbs.db
-
-# Local caches / large data (keep .gitkeep)
+.matplotlib-cache/
 data/*.csv
+reports/*.csv
+reports/*.png
+reports/*.md
 !data/.gitkeep
+!reports/.gitkeep
