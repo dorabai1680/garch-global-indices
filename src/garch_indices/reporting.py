@@ -7,6 +7,7 @@ os.environ.setdefault("MPLCONFIGDIR", str(Path(".matplotlib-cache").resolve()))
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from .garch import GarchResult
 
@@ -101,56 +102,53 @@ def evaluate_forecasts(
     The `step` parameter controls evaluation frequency (e.g., step=5 evaluates every
     5th observation) to reduce the number of GARCH refits and speed up evaluation.
     """
-    rows = []
-    for name, prices in prices_by_index.items():
-        returns = prices.copy()
-        if "return_pct" not in returns.columns:
-            # expects a column 'return_pct' (decimal, not %)
-            returns["return_pct"] = (returns["adj_close"].pct_change())
-        series = returns["return_pct"].dropna().to_numpy()
+    # helper to evaluate a single index (picklable small-data representation)
+    def _evaluate_index(args):
+        name, records, initial_train, ewma_lambda, step = args
+        import numpy as _np
+        rows_local = []
+        arr = _np.asarray(records.get("return_pct", []), dtype=float)
+        if arr.size == 0:
+            # try adj_close
+            adj = _np.asarray(records.get("adj_close", []), dtype=float)
+            if adj.size == 0:
+                return rows_local
+            # compute pct returns
+            arr = adj[1:] / adj[:-1] - 1.0
+        series = arr[~_np.isnan(arr)]
         n = series.size
         if n < 60:
-            continue
+            return rows_local
 
         train0 = min(initial_train, max(60, n // 3))
+
         realized = []
         forecasts = {"historical": [], "ewma": [], "garch": []}
-
-        # Precompute EWMA initial variance on first train0
         for t in range(train0, n - 1, step):
             train = series[:t]
-            # realized variance at t+1 (one-step ahead) use squared return
             rv = float(series[t + 1] ** 2)
             realized.append(rv)
 
-            # Historical rolling window (last 20 days)
             window = min(20, train.size)
             hist_var = float(train[-window:].var(ddof=1)) if train.size > 1 else float(train.var())
             forecasts["historical"].append(max(hist_var, 1e-12))
 
-            # EWMA: compute on training window
-            ewma_var = train[-1] ** 2 if train.size == 1 else float(((1 - ewma_lambda) * (train ** 2)).sum())
-            # a simple recursive EWMA estimate (one-liner fallback)
-            s = train[0] ** 2
+            # EWMA recursive
+            s = float(train[0] ** 2)
             for x in train[1:]:
                 s = ewma_lambda * s + (1 - ewma_lambda) * (x ** 2)
-            ewma_var = float(s)
-            forecasts["ewma"].append(max(ewma_var, 1e-12))
+            forecasts["ewma"].append(max(float(s), 1e-12))
 
-            # GARCH: fit on train and compute 1-step forecast
+            # GARCH fit
             try:
                 from .garch import fit_garch11
 
                 gr = fit_garch11(train)
                 last_sigma2 = float(gr.conditional_volatility[-1] ** 2)
-                last_resid = float((train[-1] - gr.mu) ** 2)
                 garch_forecast = float(gr.omega + gr.alpha * (train[-1] - gr.mu) ** 2 + gr.beta * last_sigma2)
                 forecasts["garch"].append(max(garch_forecast, 1e-12))
             except Exception:
                 forecasts["garch"].append(float("nan"))
-
-        # compute metrics
-        import numpy as _np
 
         def _metrics(farr):
             f = _np.asarray(farr, dtype=float)
@@ -162,21 +160,37 @@ def evaluate_forecasts(
             r = r[mask]
             rmse = float(_np.sqrt(_np.mean((f - r) ** 2)))
             mae = float(_np.mean(_np.abs(f - r)))
-            # QLIKE: mean( log(f) + r / f )
             qlike = float(_np.mean(_np.log(f) + r / f))
             return {"rmse": rmse, "mae": mae, "qlike": qlike}
 
         for method in ("historical", "ewma", "garch"):
             mets = _metrics(forecasts[method])
-            rows.append(
-                {
-                    "index": name,
-                    "method": method,
-                    "rmse": mets["rmse"],
-                    "mae": mets["mae"],
-                    "qlike": mets["qlike"],
-                }
-            )
+            rows_local.append({"index": name, "method": method, "rmse": mets["rmse"], "mae": mets["mae"], "qlike": mets["qlike"]})
+
+        return rows_local
+
+    # prepare small serializable inputs
+    tasks = []
+    for name, prices in prices_by_index.items():
+        rec = {}
+        if "return_pct" in prices.columns:
+            rec["return_pct"] = prices["return_pct"].to_numpy().tolist()
+        if "adj_close" in prices.columns:
+            rec["adj_close"] = prices["adj_close"].to_numpy().tolist()
+        tasks.append((name, rec, initial_train, ewma_lambda, step))
+
+    rows = []
+    # parallelize across indices (lightweight, each task fits many small GARCHs)
+    with ProcessPoolExecutor(max_workers=min(4, len(tasks) or 1)) as ex:
+        futures = {ex.submit(_evaluate_index, t): t[0] for t in tasks}
+        for fut in as_completed(futures):
+            try:
+                result = fut.result()
+                if result:
+                    rows.extend(result)
+            except Exception:
+                # swallow index-level failures
+                continue
 
         df = pd.DataFrame(rows)
     if not df.empty:
