@@ -15,6 +15,7 @@ from src.garch_indices.reporting import (
     plot_persistence,
     write_markdown_report,
 )
+from src.garch_indices.reporting import evaluate_forecasts
 
 
 def main() -> None:
@@ -69,6 +70,12 @@ def main() -> None:
     plot_persistence(summary, output_dir / "persistence.png")
     write_markdown_report(summary, output_dir / "report.md", demo_mode=demo_mode)
 
+
+    # Forecast evaluation (out-of-sample 1-step ahead)
+    eval_df = evaluate_forecasts(prices_by_index, output_dir)
+    if not eval_df.empty:
+        print("\nForecast evaluation (saved to forecast_evaluation.csv):")
+        print(eval_df.groupby("method")["rmse"].mean())
     print(summary.to_string(index=False))
     print(f"\nReport written to: {output_dir.resolve()}")
 

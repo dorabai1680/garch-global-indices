@@ -85,11 +85,94 @@ The persistence metric is `alpha + beta`. Values close to 1 indicate volatility 
 
 ## Generated Charts
 
-- `conditional_volatility.png`
-- `persistence.png`
 """
     output_path.write_text(markdown, encoding="utf-8")
 
+def evaluate_forecasts(prices_by_index: dict[str, pd.DataFrame], output_path: Path, *, initial_train: int = 252, ewma_lambda: float = 0.94) -> pd.DataFrame:
+    """Run a simple out-of-sample 1-step-ahead forecast comparison.
+    """
+    rows = []
+    for name, prices in prices_by_index.items():
+        returns = prices.copy()
+        if "return_pct" not in returns.columns:
+            # expects a column 'return_pct' (decimal, not %)
+            returns["return_pct"] = (returns["adj_close"].pct_change())
+        series = returns["return_pct"].dropna().to_numpy()
+        n = series.size
+        if n < 60:
+            continue
+
+        train0 = min(initial_train, max(60, n // 3))
+        realized = []
+        forecasts = {"historical": [], "ewma": [], "garch": []}
+
+        # Precompute EWMA initial variance on first train0
+        for t in range(train0, n - 1):
+            train = series[:t]
+            # realized variance at t+1 (one-step ahead) use squared return
+            rv = float(series[t + 1] ** 2)
+            realized.append(rv)
+
+            # Historical rolling window (last 20 days)
+            window = min(20, train.size)
+            hist_var = float(train[-window:].var(ddof=1)) if train.size > 1 else float(train.var())
+            forecasts["historical"].append(max(hist_var, 1e-12))
+
+            # EWMA: compute on training window
+            ewma_var = train[-1] ** 2 if train.size == 1 else float(((1 - ewma_lambda) * (train ** 2)).sum())
+            # a simple recursive EWMA estimate (one-liner fallback)
+            s = train[0] ** 2
+            for x in train[1:]:
+                s = ewma_lambda * s + (1 - ewma_lambda) * (x ** 2)
+            ewma_var = float(s)
+            forecasts["ewma"].append(max(ewma_var, 1e-12))
+
+            # GARCH: fit on train and compute 1-step forecast
+            try:
+                from .garch import fit_garch11
+
+                gr = fit_garch11(train)
+                last_sigma2 = float(gr.conditional_volatility[-1] ** 2)
+                last_resid = float((train[-1] - gr.mu) ** 2)
+                garch_forecast = float(gr.omega + gr.alpha * (train[-1] - gr.mu) ** 2 + gr.beta * last_sigma2)
+                forecasts["garch"].append(max(garch_forecast, 1e-12))
+            except Exception:
+                forecasts["garch"].append(float("nan"))
+
+        # compute metrics
+        import numpy as _np
+
+        def _metrics(farr):
+            f = _np.asarray(farr, dtype=float)
+            r = _np.asarray(realized, dtype=float)
+            mask = _np.isfinite(f) & _np.isfinite(r)
+            if not mask.any():
+                return {"rmse": _np.nan, "mae": _np.nan, "qlike": _np.nan}
+            f = f[mask]
+            r = r[mask]
+            rmse = float(_np.sqrt(_np.mean((f - r) ** 2)))
+            mae = float(_np.mean(_np.abs(f - r)))
+            # QLIKE: mean( log(f) + r / f )
+            qlike = float(_np.mean(_np.log(f) + r / f))
+            return {"rmse": rmse, "mae": mae, "qlike": qlike}
+
+        for method in ("historical", "ewma", "garch"):
+            mets = _metrics(forecasts[method])
+            rows.append(
+                {
+                    "index": name,
+                    "method": method,
+                    "rmse": mets["rmse"],
+                    "mae": mets["mae"],
+                    "qlike": mets["qlike"],
+                }
+            )
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        output_path.mkdir(parents=True, exist_ok=True)
+        df.to_csv(output_path / "forecast_evaluation.csv", index=False)
+    return df
 
 def _markdown_table(frame: pd.DataFrame) -> str:
     display = frame.copy()
