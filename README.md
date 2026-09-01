@@ -86,6 +86,23 @@ python -m unittest
 python run_analysis.py --start 2020-01-01 --end 2026-07-27 --force-download
 ```
 
+## Forecast Evaluation
+
+This project includes an out-of-sample 1-step-ahead forecast evaluation comparing three methods:
+
+- Historical rolling variance (20-day window)
+- EWMA variance (lambda=0.94 by default)
+- GARCH(1,1) 1-step forecast (refit on expanding window)
+
+The evaluation saves `reports/forecast_evaluation.csv` (row per index-method) and an aggregated `reports/results_summary.csv` with mean RMSE/MAE/QLIKE per method. Run the demo to reproduce:
+
+```bash
+python run_analysis.py --demo
+```
+
+You can control evaluation speed with the `--eval-step` option (defaults to 5), which evaluates every k steps to reduce refit frequency.
+
+
 ## Manual Yahoo CSV Download
 
 If your browser can access Yahoo Finance but the terminal cannot, download CSV files manually from Yahoo Finance Historical Data and place them in `data/` with these names:

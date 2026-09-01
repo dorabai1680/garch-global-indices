@@ -88,8 +88,18 @@ The persistence metric is `alpha + beta`. Values close to 1 indicate volatility 
 """
     output_path.write_text(markdown, encoding="utf-8")
 
-def evaluate_forecasts(prices_by_index: dict[str, pd.DataFrame], output_path: Path, *, initial_train: int = 252, ewma_lambda: float = 0.94) -> pd.DataFrame:
+def evaluate_forecasts(
+    prices_by_index: dict[str, pd.DataFrame],
+    output_path: Path,
+    *,
+    initial_train: int = 252,
+    ewma_lambda: float = 0.94,
+    step: int = 5,
+) -> pd.DataFrame:
     """Run a simple out-of-sample 1-step-ahead forecast comparison.
+
+    The `step` parameter controls evaluation frequency (e.g., step=5 evaluates every
+    5th observation) to reduce the number of GARCH refits and speed up evaluation.
     """
     rows = []
     for name, prices in prices_by_index.items():
@@ -107,7 +117,7 @@ def evaluate_forecasts(prices_by_index: dict[str, pd.DataFrame], output_path: Pa
         forecasts = {"historical": [], "ewma": [], "garch": []}
 
         # Precompute EWMA initial variance on first train0
-        for t in range(train0, n - 1):
+        for t in range(train0, n - 1, step):
             train = series[:t]
             # realized variance at t+1 (one-step ahead) use squared return
             rv = float(series[t + 1] ** 2)
@@ -168,10 +178,16 @@ def evaluate_forecasts(prices_by_index: dict[str, pd.DataFrame], output_path: Pa
                 }
             )
 
-    df = pd.DataFrame(rows)
+        df = pd.DataFrame(rows)
     if not df.empty:
         output_path.mkdir(parents=True, exist_ok=True)
         df.to_csv(output_path / "forecast_evaluation.csv", index=False)
+
+        # also write aggregated summary (mean metrics per index and method)
+        summary = (
+            df.groupby(["index", "method"]).agg({"rmse": "mean", "mae": "mean", "qlike": "mean"}).reset_index()
+        )
+        summary.to_csv(output_path / "results_summary.csv", index=False)
     return df
 
 def _markdown_table(frame: pd.DataFrame) -> str:

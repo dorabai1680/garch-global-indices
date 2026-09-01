@@ -26,6 +26,7 @@ def main() -> None:
     parser.add_argument("--data-dir", default="data", help="Directory for cached Yahoo Finance CSV files.")
     parser.add_argument("--demo", action="store_true", help="Use deterministic demo data instead of Yahoo Finance.")
     parser.add_argument("--force-download", action="store_true", help="Refresh cached Yahoo Finance CSV files.")
+    parser.add_argument("--eval-step", type=int, default=5, help="Step size for forecast evaluation to reduce refit frequency (default: 5)")
     args = parser.parse_args()
 
     start = date.fromisoformat(args.start)
@@ -72,10 +73,19 @@ def main() -> None:
 
 
     # Forecast evaluation (out-of-sample 1-step ahead)
-    eval_df = evaluate_forecasts(prices_by_index, output_dir)
+    eval_df = evaluate_forecasts(prices_by_index, output_dir, step=args.eval_step)
     if not eval_df.empty:
         print("\nForecast evaluation (saved to forecast_evaluation.csv):")
         print(eval_df.groupby("method")["rmse"].mean())
+        # Append aggregated summary to report.md
+        try:
+            summary = pd.read_csv(output_dir / "results_summary.csv")
+            with open(output_dir / "report.md", "a", encoding="utf-8") as f:
+                f.write("\n\n## Forecast Evaluation Summary\n\n")
+                f.write(summary.to_markdown(index=False))
+                f.write("\n")
+        except Exception:
+            pass
     print(summary.to_string(index=False))
     print(f"\nReport written to: {output_dir.resolve()}")
 
