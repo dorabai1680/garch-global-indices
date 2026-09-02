@@ -19,6 +19,9 @@ This project estimates GARCH(1,1) volatility models for four major global equity
 - Reports `omega`, ARCH `alpha`, GARCH `beta`, AIC, BIC, and volatility persistence `alpha + beta`.
 - Generates comparison charts and CSV outputs.
 - Falls back to deterministic demo data if Yahoo Finance is unavailable.
+- Runs leakage-free expanding-window forecast evaluation against rolling historical variance and EWMA.
+- Includes Gaussian/Student-t model comparison, stationarity tests, residual diagnostics, and multi-step forecasts.
+- Provides an interactive Streamlit dashboard for exploring the generated results.
 
 ## Project Structure
 
@@ -26,6 +29,8 @@ This project estimates GARCH(1,1) volatility models for four major global equity
 garch-volatility-dashboard/
 ├── README.md
 ├── requirements.txt
+├── app.py
+├── main.py
 ├── run_analysis.py
 ├── data/
 │   └── .gitkeep
@@ -38,6 +43,7 @@ garch-volatility-dashboard/
         ├── __init__.py
         ├── config.py
         ├── data.py
+        ├── forecast_eval.py
         ├── garch.py
         └── reporting.py
 ```
@@ -50,6 +56,14 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python run_analysis.py
+```
+
+`run_analysis.py` is the reproducible lightweight pipeline used by the dashboard.
+For the extended research workflow—including Student-t GARCH, stationarity tests,
+order selection, residual diagnostics, and forecast figures—run:
+
+```bash
+python main.py
 ```
 
 For the most reliable live Yahoo Finance download path, install the optional Yahoo helper:
@@ -65,6 +79,20 @@ Outputs are written to `reports/`:
 - `conditional_volatility.png`
 - `persistence.png`
 - `report.md`
+- `forecast_evaluation.csv`
+- `metadata.json`
+
+## Interactive Dashboard
+
+Generate the report artifacts, then launch the dashboard:
+
+```bash
+python run_analysis.py
+streamlit run app.py
+```
+
+The dashboard includes index and date filters, conditional-volatility charts,
+persistence comparison, forecast-loss selection, and model result tables.
 
 ## Offline Demo
 
@@ -100,7 +128,8 @@ The evaluation saves `reports/forecast_evaluation.csv` (row per index-method) an
 python run_analysis.py --demo
 ```
 
-You can control evaluation speed with the `--eval-step` option (defaults to 5), which evaluates every k steps to reduce refit frequency.
+GARCH parameters are re-estimated every 20 holdout observations. Each forecast
+uses only information available at its forecast origin.
 
 
 ## Manual Yahoo CSV Download

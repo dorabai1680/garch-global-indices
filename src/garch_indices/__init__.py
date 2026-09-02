@@ -1,5 +1,5 @@
-"""GARCH volatility analysis for global equity indices."""
+"""Global equity-index GARCH analysis."""
 
-__all__ = ["__version__"]
+from .garch import GarchResult, fit_garch11
 
-__version__ = "0.1.0"
+__all__ = ["GarchResult", "fit_garch11"]
